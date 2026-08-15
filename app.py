@@ -110,8 +110,19 @@ def init_db():
 
 init_db()
 
+from streamlit_cookies_controller import CookieController
+controller = CookieController()
+
 # ---------- AUTH ----------
 if "user" not in st.session_state: st.session_state.user=None
+
+# Check cookie if session is empty
+cookie_user = controller.get("auth_username")
+if st.session_state.user is None and cookie_user:
+    r = q("SELECT * FROM users WHERE username=? AND active=1", (cookie_user,))
+    if not r.empty:
+        st.session_state.user = {"id":int(r.iloc[0].id),"username":r.iloc[0].username,"role":r.iloc[0].role,"must_change":int(r.iloc[0].must_change_password)}
+        st.rerun()
 
 if st.session_state.user is None:
     st.title("🔐 Project Cost Control System V3 Production")
@@ -121,6 +132,7 @@ if st.session_state.user is None:
             r=q("SELECT * FROM users WHERE username=? AND password_hash=? AND active=1",(u,hp(p)))
             if not r.empty:
                 st.session_state.user={"id":int(r.iloc[0].id),"username":r.iloc[0].username,"role":r.iloc[0].role,"must_change":int(r.iloc[0].must_change_password)}
+                controller.set("auth_username", r.iloc[0].username, max_age=86400*7) # 7 days
                 audit("LOGIN","auth",detail="Successful login")
                 st.rerun()
             else: st.error("Username atau password salah.")
@@ -165,6 +177,7 @@ def require(module, action="view"):
 st.sidebar.success(f"👤 {user['username']} • {role}")
 if st.sidebar.button("Logout"):
     audit("LOGOUT","auth")
+    controller.remove("auth_username")
     st.session_state.user=None
     st.rerun()
 
