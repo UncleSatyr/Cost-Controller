@@ -9,6 +9,13 @@ init_db()
 controller = CookieController()
 st.session_state["cookie_controller"] = controller
 
+# Mencegah glitch render halaman login selama sepersekian detik
+# saat komponen CookieController sedang membaca cookie di latar belakang
+if "app_loaded" not in st.session_state:
+    st.session_state.app_loaded = True
+    st.markdown("<div style='text-align: center; margin-top: 20vh;'><h3>Memuat sistem...</h3></div>", unsafe_allow_html=True)
+    st.stop()
+
 if "user" not in st.session_state:
     st.session_state.user = None
 
