@@ -186,15 +186,20 @@ if not projects.empty:
     pid=st.sidebar.selectbox("PROYEK AKTIF",projects.id.tolist(),format_func=lambda x:projects.loc[projects.id==x,"name"].iloc[0])
     project=projects.loc[projects.id==pid].iloc[0]
 
+# Helper text for forms
+FORM_INSTRUCTION = "💡 **Instruksi Input Nominal:** Streamlit form tidak memisahkan ribuan saat mengetik. Masukkan angka *murni* tanpa titik atau koma (contoh: untuk Rp 1.500.000 ketik `1500000`)."
+CURRENCY_HELP = "Ketik angka tanpa titik/koma."
+
 # ---------- PROJECT ----------
 if module=="projects":
     require("projects")
     st.subheader("🏗️ Database Proyek")
     if perm("projects","create"):
         with st.form("new_project"):
+            st.info(FORM_INSTRUCTION)
             a,b=st.columns(2)
             name=a.text_input("Nama Proyek *"); customer=b.text_input("Customer")
-            contract=a.number_input("Nilai Kontrak",0.0,step=1_000_000.0); pic=b.text_input("PIC")
+            contract=a.number_input("Nilai Kontrak (Rp)",0.0,step=100000.0, help=CURRENCY_HELP); pic=b.text_input("PIC")
             start=a.date_input("Tanggal Mulai",date.today()); end=b.date_input("Target Selesai",date.today())
             status=st.selectbox("Status",["Active","Completed","On Hold","Cancelled"])
             if st.form_submit_button("Simpan Proyek",type="primary") and name.strip():
@@ -210,7 +215,8 @@ if module=="projects":
                 p=projects.loc[projects.id==psel].iloc[0]
                 if perm("projects","edit"):
                     with st.form("edit_project"):
-                        nm=st.text_input("Nama",p.name); cv=st.number_input("Nilai Kontrak",value=float(p.contract_value))
+                        st.info(FORM_INSTRUCTION)
+                        nm=st.text_input("Nama",p.name); cv=st.number_input("Nilai Kontrak (Rp)",value=float(p.contract_value), help=CURRENCY_HELP)
                         stt=st.selectbox("Status",["Active","Completed","On Hold","Cancelled"],index=["Active","Completed","On Hold","Cancelled"].index(p.status))
                         if st.form_submit_button("Update"):
                             s, _, e = execute("UPDATE projects SET name=?,contract_value=?,status=?,updated_at=? WHERE id=?",(nm,cv,stt,now(),psel))
@@ -266,8 +272,9 @@ elif module=="rab":
     st.subheader("📋 RAB + Approval Workflow")
     if perm("rab","create"):
         with st.form("rab"):
+            st.info(FORM_INSTRUCTION)
             a,b,c=st.columns(3); code=a.text_input("Kode"); cat=b.text_input("Kategori"); desc=c.text_input("Uraian")
-            d,e,f=st.columns(3); qty=d.number_input("Qty",0.); unit=e.text_input("Satuan"); price=f.number_input("Harga Satuan",0.,step=1000.)
+            d,e,f=st.columns(3); qty=d.number_input("Qty",0.); unit=e.text_input("Satuan"); price=f.number_input("Harga Satuan (Rp)",0.,step=1000., help=CURRENCY_HELP)
             if st.form_submit_button("Tambah RAB"):
                 s, lid, e = execute("INSERT INTO rab(project_id,code,category,description,qty,unit,unit_price,budget) VALUES(?,?,?,?,?,?,?,?)",(pid,code,cat,desc,qty,unit,price,qty*price))
                 if s: audit("CREATE","rab","rab",lid,code); st.rerun()
@@ -293,12 +300,13 @@ elif module=="rab":
                 else:
                     if perm("rab","edit"):
                         with st.form("edit_rab"):
+                            st.info(FORM_INSTRUCTION)
                             e_code = st.text_input("Kode", sel.code)
                             e_cat = st.text_input("Kategori", sel.category)
                             e_desc = st.text_input("Uraian", sel.description)
                             e_qty = st.number_input("Qty", 0., value=float(sel.qty))
                             e_unit = st.text_input("Satuan", sel.unit)
-                            e_price = st.number_input("Harga Satuan", 0., value=float(sel.unit_price))
+                            e_price = st.number_input("Harga Satuan (Rp)", 0., value=float(sel.unit_price), help=CURRENCY_HELP)
                             if st.form_submit_button("Update"):
                                 s, _, e = execute("UPDATE rab SET code=?, category=?, description=?, qty=?, unit=?, unit_price=?, budget=? WHERE id=?", (e_code, e_cat, e_desc, e_qty, e_unit, e_price, e_qty*e_price, psel))
                                 if s: audit("UPDATE","rab","rab",psel,e_code); st.rerun()
@@ -314,8 +322,9 @@ elif module=="actual":
     st.subheader("💸 Actual Cost + Approval")
     if perm("actual","create"):
         with st.form("actual"):
+            st.info(FORM_INSTRUCTION)
             a,b,c=st.columns(3); dt=a.date_input("Tanggal",date.today()); cat=b.text_input("Kategori"); vendor=c.text_input("Vendor")
-            desc=a.text_input("Deskripsi"); amount=b.number_input("Amount",0.,step=100000.)
+            desc=a.text_input("Deskripsi"); amount=b.number_input("Amount (Rp)",0.,step=100000., help=CURRENCY_HELP)
             if st.form_submit_button("Tambah Actual"):
                 s, lid, e = execute("INSERT INTO actual_costs(project_id,date,category,description,vendor,amount) VALUES(?,?,?,?,?,?)",(pid,str(dt),cat,desc,vendor,amount))
                 if s: audit("CREATE","actual","actual_costs",lid,str(amount)); st.rerun()
@@ -333,11 +342,12 @@ elif module=="actual":
                 else:
                     if perm("actual","edit"):
                         with st.form("edit_actual"):
+                            st.info(FORM_INSTRUCTION)
                             e_dt = st.date_input("Tanggal", datetime.strptime(sel.date, "%Y-%m-%d").date() if sel.date else date.today())
                             e_cat = st.text_input("Kategori", sel.category)
                             e_ven = st.text_input("Vendor", sel.vendor)
                             e_desc = st.text_input("Deskripsi", sel.description)
-                            e_amt = st.number_input("Amount", 0., value=float(sel.amount))
+                            e_amt = st.number_input("Amount (Rp)", 0., value=float(sel.amount), help=CURRENCY_HELP)
                             if st.form_submit_button("Update"):
                                 s, _, e = execute("UPDATE actual_costs SET date=?, category=?, vendor=?, description=?, amount=? WHERE id=?", (str(e_dt), e_cat, e_ven, e_desc, e_amt, psel))
                                 if s: audit("UPDATE","actual","actual_costs",psel,str(e_amt)); st.rerun()
@@ -353,8 +363,9 @@ elif module=="po":
     st.subheader("🧾 PO / Procurement + Approval")
     if perm("po","create"):
         with st.form("po"):
+            st.info(FORM_INSTRUCTION)
             a,b,c=st.columns(3); no=a.text_input("PO No"); vendor=b.text_input("Vendor"); dt=c.date_input("Tanggal",date.today())
-            desc=a.text_input("Deskripsi"); value=b.number_input("Nilai PO",0.,step=100000.); paid=c.number_input("Paid",0.,step=100000.)
+            desc=a.text_input("Deskripsi"); value=b.number_input("Nilai PO (Rp)",0.,step=100000., help=CURRENCY_HELP); paid=c.number_input("Paid (Rp)",0.,step=100000., help=CURRENCY_HELP)
             if st.form_submit_button("Tambah PO"):
                 s, lid, e = execute("INSERT INTO purchase_orders(project_id,po_no,vendor,date,description,po_value,paid_value) VALUES(?,?,?,?,?,?,?)",(pid,no,vendor,str(dt),desc,value,paid))
                 if s: audit("CREATE","po","purchase_orders",lid,no); st.rerun()
@@ -371,12 +382,13 @@ elif module=="po":
                 else:
                     if perm("po","edit"):
                         with st.form("edit_po"):
+                            st.info(FORM_INSTRUCTION)
                             e_no = st.text_input("PO No", sel.po_no)
                             e_ven = st.text_input("Vendor", sel.vendor)
                             e_dt = st.date_input("Tanggal", datetime.strptime(sel.date, "%Y-%m-%d").date() if sel.date else date.today())
                             e_desc = st.text_input("Deskripsi", sel.description)
-                            e_val = st.number_input("Nilai PO", 0., value=float(sel.po_value))
-                            e_paid = st.number_input("Paid", 0., value=float(sel.paid_value))
+                            e_val = st.number_input("Nilai PO (Rp)", 0., value=float(sel.po_value), help=CURRENCY_HELP)
+                            e_paid = st.number_input("Paid (Rp)", 0., value=float(sel.paid_value), help=CURRENCY_HELP)
                             if st.form_submit_button("Update"):
                                 s, _, e = execute("UPDATE purchase_orders SET po_no=?, vendor=?, date=?, description=?, po_value=?, paid_value=? WHERE id=?", (e_no, e_ven, str(e_dt), e_desc, e_val, e_paid, psel))
                                 if s: audit("UPDATE","po","purchase_orders",psel,e_no); st.rerun()
@@ -392,8 +404,9 @@ elif module=="invoice":
     st.subheader("🧮 Invoice & Termin + Approval")
     if perm("invoice","create"):
         with st.form("inv"):
+            st.info(FORM_INSTRUCTION)
             a,b,c=st.columns(3); no=a.text_input("Invoice/Termin"); cust=b.text_input("Customer"); inv=a.date_input("Invoice Date",date.today()); due=c.date_input("Due Date",date.today())
-            amount=b.number_input("Amount",0.,step=100000.); paid=c.number_input("Paid",0.,step=100000.)
+            amount=b.number_input("Amount (Rp)",0.,step=100000., help=CURRENCY_HELP); paid=c.number_input("Paid (Rp)",0.,step=100000., help=CURRENCY_HELP)
             if st.form_submit_button("Tambah Invoice"):
                 s, lid, e = execute("INSERT INTO invoices(project_id,invoice_no,customer,invoice_date,due_date,amount,paid_amount) VALUES(?,?,?,?,?,?,?)",(pid,no,cust,str(inv),str(due),amount,paid))
                 if s: audit("CREATE","invoice","invoices",lid,no); st.rerun()
@@ -410,12 +423,13 @@ elif module=="invoice":
                 else:
                     if perm("invoice","edit"):
                         with st.form("edit_inv"):
+                            st.info(FORM_INSTRUCTION)
                             e_no = st.text_input("Invoice/Termin", sel.invoice_no)
                             e_cust = st.text_input("Customer", sel.customer)
                             e_inv = st.date_input("Invoice Date", datetime.strptime(sel.invoice_date, "%Y-%m-%d").date() if sel.invoice_date else date.today())
                             e_due = st.date_input("Due Date", datetime.strptime(sel.due_date, "%Y-%m-%d").date() if sel.due_date else date.today())
-                            e_amt = st.number_input("Amount", 0., value=float(sel.amount))
-                            e_paid = st.number_input("Paid", 0., value=float(sel.paid_amount))
+                            e_amt = st.number_input("Amount (Rp)", 0., value=float(sel.amount), help=CURRENCY_HELP)
+                            e_paid = st.number_input("Paid (Rp)", 0., value=float(sel.paid_amount), help=CURRENCY_HELP)
                             if st.form_submit_button("Update"):
                                 s, _, e = execute("UPDATE invoices SET invoice_no=?, customer=?, invoice_date=?, due_date=?, amount=?, paid_amount=? WHERE id=?", (e_no, e_cust, str(e_inv), str(e_due), e_amt, e_paid, psel))
                                 if s: audit("UPDATE","invoice","invoices",psel,e_no); st.rerun()
@@ -439,8 +453,9 @@ elif module=="payable":
     st.subheader("🏦 Hutang Vendor")
     if perm("payable","create"):
         with st.form("pay"):
+            st.info(FORM_INSTRUCTION)
             a,b,c=st.columns(3); vendor=a.text_input("Vendor"); bill=b.text_input("No Tagihan"); bd=c.date_input("Bill Date",date.today()); due=a.date_input("Due Date",date.today())
-            amount=b.number_input("Amount",0.,step=100000.); paid=c.number_input("Paid",0.,step=100000.)
+            amount=b.number_input("Amount (Rp)",0.,step=100000., help=CURRENCY_HELP); paid=c.number_input("Paid (Rp)",0.,step=100000., help=CURRENCY_HELP)
             if st.form_submit_button("Tambah Hutang"):
                 s, lid, e = execute("INSERT INTO vendor_payables(project_id,vendor,bill_no,bill_date,due_date,amount,paid_amount) VALUES(?,?,?,?,?,?,?)",(pid,vendor,bill,str(bd),str(due),amount,paid))
                 if s: audit("CREATE","payable","vendor_payables",lid,bill); st.rerun()
@@ -457,12 +472,13 @@ elif module=="payable":
                 else:
                     if perm("payable","edit"):
                         with st.form("edit_pay"):
+                            st.info(FORM_INSTRUCTION)
                             e_ven = st.text_input("Vendor", sel.vendor)
                             e_bill = st.text_input("No Tagihan", sel.bill_no)
                             e_bd = st.date_input("Bill Date", datetime.strptime(sel.bill_date, "%Y-%m-%d").date() if sel.bill_date else date.today())
                             e_due = st.date_input("Due Date", datetime.strptime(sel.due_date, "%Y-%m-%d").date() if sel.due_date else date.today())
-                            e_amt = st.number_input("Amount", 0., value=float(sel.amount))
-                            e_paid = st.number_input("Paid", 0., value=float(sel.paid_amount))
+                            e_amt = st.number_input("Amount (Rp)", 0., value=float(sel.amount), help=CURRENCY_HELP)
+                            e_paid = st.number_input("Paid (Rp)", 0., value=float(sel.paid_amount), help=CURRENCY_HELP)
                             if st.form_submit_button("Update"):
                                 s, _, e = execute("UPDATE vendor_payables SET vendor=?, bill_no=?, bill_date=?, due_date=?, amount=?, paid_amount=? WHERE id=?", (e_ven, e_bill, str(e_bd), str(e_due), e_amt, e_paid, psel))
                                 if s: audit("UPDATE","payable","vendor_payables",psel,e_bill); st.rerun()
@@ -478,7 +494,8 @@ elif module=="cashflow":
     st.subheader("💵 Cash Flow")
     if perm("cashflow","create"):
         with st.form("cf"):
-            a,b,c=st.columns(3); period=a.text_input("Periode"); cin=b.number_input("Cash In",0.,step=100000.); cout=c.number_input("Cash Out",0.,step=100000.)
+            st.info(FORM_INSTRUCTION)
+            a,b,c=st.columns(3); period=a.text_input("Periode"); cin=b.number_input("Cash In (Rp)",0.,step=100000., help=CURRENCY_HELP); cout=c.number_input("Cash Out (Rp)",0.,step=100000., help=CURRENCY_HELP)
             if st.form_submit_button("Tambah"):
                 s, lid, e = execute("INSERT INTO cashflow(project_id,period,cash_in,cash_out) VALUES(?,?,?,?)",(pid,period,cin,cout))
                 if s: audit("CREATE","cashflow","cashflow",lid,period); st.rerun()
@@ -496,9 +513,10 @@ elif module=="cashflow":
                 else:
                     if perm("cashflow","edit"):
                         with st.form("edit_cf"):
+                            st.info(FORM_INSTRUCTION)
                             e_per = st.text_input("Periode", sel.period)
-                            e_cin = st.number_input("Cash In", 0., value=float(sel.cash_in))
-                            e_cout = st.number_input("Cash Out", 0., value=float(sel.cash_out))
+                            e_cin = st.number_input("Cash In (Rp)", 0., value=float(sel.cash_in), help=CURRENCY_HELP)
+                            e_cout = st.number_input("Cash Out (Rp)", 0., value=float(sel.cash_out), help=CURRENCY_HELP)
                             if st.form_submit_button("Update"):
                                 s, _, e = execute("UPDATE cashflow SET period=?, cash_in=?, cash_out=? WHERE id=?", (e_per, e_cin, e_cout, psel))
                                 if s: audit("UPDATE","cashflow","cashflow",psel,e_per); st.rerun()
