@@ -126,8 +126,8 @@ def require(module, action="view"):
         st.stop()
 
 def get_active_project():
-    projects=q("SELECT * FROM projects ORDER BY id DESC")
+    pid = st.session_state.get("active_project_selector")
+    if pid is None: return None, None
+    projects = q("SELECT * FROM projects WHERE id=?", (pid,))
     if projects.empty: return None, None
-    pid=st.sidebar.selectbox("PROYEK AKTIF",projects.id.tolist(), key="active_project_selector", format_func=lambda x:projects.loc[projects.id==x,"name"].iloc[0])
-    project=projects.loc[projects.id==pid].iloc[0]
-    return int(pid), project
+    return int(pid), projects.iloc[0]

@@ -37,6 +37,12 @@ else:
     # Build sidebar based on permissions
     role = user["role"]
     st.sidebar.success(f"👤 {user['username']} • {role}")
+    
+    from utils import q
+    projects = q("SELECT * FROM projects ORDER BY id DESC")
+    if not projects.empty:
+        st.sidebar.selectbox("PROYEK AKTIF", projects.id.tolist(), key="active_project_selector", format_func=lambda x: projects.loc[projects.id==x,"name"].iloc[0])
+        
     if st.sidebar.button("Logout"):
         audit("LOGOUT", "auth")
         controller.remove("auth_username")

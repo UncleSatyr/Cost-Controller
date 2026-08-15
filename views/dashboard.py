@@ -29,26 +29,32 @@ receiv = float((inv.amount - inv.paid_amount).sum()) if not inv.empty else 0
 payable = float((pay.amount - pay.paid_amount).sum()) if not pay.empty else 0
 netcash = float((cf.cash_in - cf.cash_out).sum()) if not cf.empty else 0
 
-a, b, c, d = st.columns(4)
-a.metric("Contract", money(contract))
-b.metric("BAC / RAB", money(bac))
-c.metric("Actual Cost", money(actual))
-d.metric("Current Profit", money(profit))
+with st.container(border=True):
+    st.markdown("#### 💰 Financial Overview")
+    a, b, c, d = st.columns(4)
+    a.metric("Contract", money(contract))
+    b.metric("BAC / RAB", money(bac))
+    c.metric("Actual Cost", money(actual))
+    
+    with d:
+        st.metric("Current Profit", money(profit))
+        if margin >= .15:
+            st.success("🟢 HEALTHY (>15%)")
+        elif margin >= .05:
+            st.warning("🟡 WATCH (<15%)")
+        else:
+            st.error("🔴 CRITICAL (<5%)")
 
-a, b, c, d = st.columns(4)
-a.metric("Progress", f"{progress:.1f}%", f"{progress-planned:.1f}% vs plan")
-b.metric("Margin", f"{margin:.2%}")
-c.metric("Piutang", money(receiv))
-d.metric("Hutang", money(payable))
+with st.container(border=True):
+    st.markdown("#### 📈 Progress & Liquidity")
+    a, b, c, d = st.columns(4)
+    a.metric("Progress", f"{progress:.1f}%", f"{progress-planned:.1f}% vs plan")
+    b.metric("Margin", f"{margin:.2%}")
+    c.metric("Piutang", money(receiv))
+    d.metric("Hutang", money(payable))
 
-st.metric("Net Cash Flow", money(netcash))
-
-if margin >= .15:
-    st.success("🟢 HEALTHY — margin di atas 15%")
-elif margin >= .05:
-    st.warning("🟡 WATCH — perlu monitoring")
-else:
-    st.error("🔴 CRITICAL — margin rendah")
+with st.container(border=True):
+    st.metric("Net Cash Flow", money(netcash))
 
 if not pr.empty:
     st.plotly_chart(px.line(pr, x="period", y=["planned_pct", "actual_pct"], markers=True, title="Progress Plan vs Actual"), use_container_width=True)
