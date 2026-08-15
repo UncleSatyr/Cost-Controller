@@ -7,6 +7,7 @@ st.set_page_config(page_title="Project Cost Control System v3", page_icon="ğŸ—ï
 init_db()
 
 controller = CookieController()
+st.session_state["cookie_controller"] = controller
 
 if "user" not in st.session_state:
     st.session_state.user = None

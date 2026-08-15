@@ -1,10 +1,9 @@
 import streamlit as st
-from streamlit_cookies_controller import CookieController
 from utils import q, hp, audit, execute, init_db
 
 init_db()
 
-controller = CookieController()
+controller = st.session_state.get("cookie_controller")
 
 if "user" not in st.session_state:
     st.session_state.user = None
