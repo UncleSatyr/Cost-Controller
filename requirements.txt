@@ -1,5 +1,9 @@
-streamlit>=1.36
-pandas>=2.0
-plotly>=5.20
-openpyxl>=3.1
-streamlit-cookies-controller>=0.0.2
+streamlit
+pandas
+plotly
+openpyxl
+streamlit-cookies-controller
+bcrypt
+psycopg2-binary
+python-dotenv
+SQLAlchemy>=0.0.2

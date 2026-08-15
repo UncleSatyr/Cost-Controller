@@ -1,5 +1,5 @@
 import streamlit as st
-from utils import q, hp, audit, execute, init_db
+from utils import q, hash_pw, check_pw, audit, execute, init_db
 
 init_db()
 
@@ -23,8 +23,8 @@ if st.session_state.user is None:
         u = st.text_input("Username")
         p = st.text_input("Password", type="password")
         if st.form_submit_button("Login", type="primary"):
-            r = q("SELECT * FROM users WHERE username=? AND password_hash=? AND active=1", (u, hp(p)))
-            if not r.empty:
+            r = q("SELECT * FROM users WHERE username=? AND active=1", (u,))
+            if not r.empty and check_pw(p, r.iloc[0].password_hash):
                 st.session_state.user = {"id": int(r.iloc[0].id), "username": r.iloc[0].username, "role": r.iloc[0].role, "must_change": int(r.iloc[0].must_change_password)}
                 controller.set("auth_username", r.iloc[0].username, max_age=86400*7)
                 audit("LOGIN", "auth", detail="Successful login")
@@ -42,14 +42,14 @@ else:
             confirm = st.text_input("Konfirmasi password", type="password")
             if st.form_submit_button("Ubah Password", type="primary"):
                 r = q("SELECT password_hash FROM users WHERE id=?", (user["id"],))
-                if r.empty or r.iloc[0].password_hash != hp(old): 
+                if r.empty or not check_pw(old, r.iloc[0].password_hash): 
                     st.error("Password lama salah.")
                 elif len(new) < 8: 
                     st.error("Password minimal 8 karakter.")
                 elif new != confirm: 
                     st.error("Konfirmasi password tidak sama.")
                 else:
-                    s, _, err = execute("UPDATE users SET password_hash=?,must_change_password=0 WHERE id=?", (hp(new), user["id"]))
+                    s, _, err = execute("UPDATE users SET password_hash=?,must_change_password=0 WHERE id=?", (hash_pw(new), user["id"]))
                     if s:
                         audit("PASSWORD_CHANGE", "auth", "users", user["id"], "Initial password changed")
                         st.session_state.user["must_change"] = 0

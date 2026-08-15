@@ -1,5 +1,5 @@
 import streamlit as st
-from utils import q, execute, audit, now, hp, require, perm
+from utils import q, execute, audit, now, hash_pw, require, perm
 
 require("users")
 st.subheader("👥 User & Module Permissions")
@@ -19,7 +19,7 @@ if perm("users","create") or perm("users","edit") or perm("users","delete"):
                     st.error("Username wajib diisi dan password minimal 8 karakter.")
                 else:
                     s, lid, err = execute("INSERT INTO users(username,password_hash,role,created_at) VALUES(?,?,?,?)",
-                                          (un, hp(pw), rr, now()))
+                                          (un, hash_pw(pw), rr, now()))
                     if s: 
                         audit("CREATE", "users", "users", lid, un)
                         st.rerun()
