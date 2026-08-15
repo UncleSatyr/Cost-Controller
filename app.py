@@ -26,7 +26,7 @@ def conn():
 
 def hp(p): return hashlib.sha256(p.encode()).hexdigest()
 def now(): return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-def money(x): return f"Rp {x:,.0f}".replace(",", ".")
+def money(x): return f"Rp {x:,.0f}".replace(",", ".") if x is not None else "Rp 0"
 
 def q(sql, params=()):
     with conn() as c:
@@ -187,43 +187,53 @@ if not projects.empty:
     project=projects.loc[projects.id==pid].iloc[0]
 
 # Helper text for forms
-FORM_INSTRUCTION = "💡 **Instruksi Input Nominal:** Streamlit form tidak memisahkan ribuan saat mengetik. Masukkan angka *murni* tanpa titik atau koma (contoh: untuk Rp 1.500.000 ketik `1500000`)."
+FORM_INSTRUCTION = "💡 **Instruksi:** Nominal uang akan otomatis terformat di bawah kotak input saat Anda mengetik."
 CURRENCY_HELP = "Ketik angka tanpa titik/koma."
+def render_live_format(val):
+    if val is not None and val > 0:
+        st.markdown(f"<span style='color: #4CAF50; font-weight: bold;'>Terbaca: {money(val)}</span>", unsafe_allow_html=True)
 
 # ---------- PROJECT ----------
 if module=="projects":
     require("projects")
     st.subheader("🏗️ Database Proyek")
     if perm("projects","create"):
-        with st.form("new_project"):
-            st.info(FORM_INSTRUCTION)
-            a,b=st.columns(2)
-            name=a.text_input("Nama Proyek *"); customer=b.text_input("Customer")
-            contract=a.number_input("Nilai Kontrak (Rp)",0.0,step=100000.0, help=CURRENCY_HELP); pic=b.text_input("PIC")
-            start=a.date_input("Tanggal Mulai",date.today()); end=b.date_input("Target Selesai",date.today())
-            status=st.selectbox("Status",["Active","Completed","On Hold","Cancelled"])
-            if st.form_submit_button("Simpan Proyek",type="primary") and name.strip():
+        st.info(FORM_INSTRUCTION)
+        a,b=st.columns(2)
+        name=a.text_input("Nama Proyek *", placeholder="Contoh: Pembangunan Gudang")
+        customer=b.text_input("Customer", placeholder="Nama Perusahaan/Klien")
+        contract=a.number_input("Nilai Kontrak (Rp)", value=None, step=100000.0, help=CURRENCY_HELP, placeholder="Contoh: 15000000")
+        with a: render_live_format(contract)
+        pic=b.text_input("PIC", placeholder="Nama Penanggung Jawab")
+        start=a.date_input("Tanggal Mulai",date.today())
+        end=b.date_input("Target Selesai",date.today())
+        status=st.selectbox("Status",["Active","Completed","On Hold","Cancelled"])
+        if st.button("Simpan Proyek",type="primary", key="btn_create_proj"):
+            if not name.strip():
+                st.error("Nama Proyek wajib diisi!")
+            else:
                 s, lid, e = execute("INSERT INTO projects(name,customer,contract_value,start_date,end_date,pic,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",
-                        (name,customer,contract,str(start),str(end),pic,status,now(),now()))
+                        (name,customer,contract or 0,str(start),str(end),pic,status,now(),now()))
                 if s: audit("CREATE","projects","projects",lid,name); st.rerun()
                 else: st.error(e)
     if not projects.empty:
         st.dataframe(projects,use_container_width=True,hide_index=True)
         if perm("projects","edit") or perm("projects","delete"):
             with st.expander("Edit / Hapus Proyek"):
-                psel=st.selectbox("Pilih Proyek",projects.id.tolist())
+                psel=st.selectbox("Pilih Proyek",projects.id.tolist(), key="sel_proj")
                 p=projects.loc[projects.id==psel].iloc[0]
                 if perm("projects","edit"):
-                    with st.form("edit_project"):
-                        st.info(FORM_INSTRUCTION)
-                        nm=st.text_input("Nama",p.name); cv=st.number_input("Nilai Kontrak (Rp)",value=float(p.contract_value), help=CURRENCY_HELP)
-                        stt=st.selectbox("Status",["Active","Completed","On Hold","Cancelled"],index=["Active","Completed","On Hold","Cancelled"].index(p.status))
-                        if st.form_submit_button("Update"):
-                            s, _, e = execute("UPDATE projects SET name=?,contract_value=?,status=?,updated_at=? WHERE id=?",(nm,cv,stt,now(),psel))
-                            if s: audit("UPDATE","projects","projects",psel,nm); st.rerun()
-                            else: st.error(e)
+                    st.info(FORM_INSTRUCTION)
+                    nm=st.text_input("Nama",p.name, key="ep_nm")
+                    cv=st.number_input("Nilai Kontrak (Rp)",value=float(p.contract_value), help=CURRENCY_HELP, key="ep_cv")
+                    render_live_format(cv)
+                    stt=st.selectbox("Status",["Active","Completed","On Hold","Cancelled"],index=["Active","Completed","On Hold","Cancelled"].index(p.status), key="ep_stt")
+                    if st.button("Update Proyek", key="btn_upd_proj"):
+                        s, _, e = execute("UPDATE projects SET name=?,contract_value=?,status=?,updated_at=? WHERE id=?",(nm,cv,stt,now(),psel))
+                        if s: audit("UPDATE","projects","projects",psel,nm); st.rerun()
+                        else: st.error(e)
                 if perm("projects","delete"):
-                    if st.button("🗑️ Hapus Proyek Terpilih"):
+                    if st.button("🗑️ Hapus Proyek Terpilih", key="btn_del_proj"):
                         s, _, e = execute("DELETE FROM projects WHERE id=?",(psel,))
                         if s: audit("DELETE","projects","projects",psel); st.rerun()
                         else: st.error(e)
@@ -232,13 +242,15 @@ elif module=="progress":
     require("progress")
     st.subheader("📈 Progress Proyek")
     if not projects.empty and perm("progress","create"):
-        with st.form("progress"):
-            a,b,c=st.columns(3); period=a.text_input("Periode"); planned=b.number_input("Planned %",0.,100.,step=1.); actual=c.number_input("Actual %",0.,100.,step=1.)
-            weight=st.number_input("Bobot %",0.,100.,step=1.)
-            if st.form_submit_button("Tambah"):
-                s, lid, e = execute("INSERT INTO progress(project_id,period,planned_pct,actual_pct,weight_pct) VALUES(?,?,?,?,?)",(pid,period,planned,actual,weight))
-                if s: audit("CREATE","progress","progress",lid,period); st.rerun()
-                else: st.error(e)
+        a,b,c=st.columns(3)
+        period=a.text_input("Periode", placeholder="Contoh: Minggu 1 / Bulan Jan")
+        planned=b.number_input("Planned %",0.,100.,step=1., value=None, placeholder="0 - 100")
+        actual=c.number_input("Actual %",0.,100.,step=1., value=None, placeholder="0 - 100")
+        weight=st.number_input("Bobot %",0.,100.,step=1., value=None, placeholder="0 - 100")
+        if st.button("Tambah Progress", type="primary", key="btn_create_prog"):
+            s, lid, e = execute("INSERT INTO progress(project_id,period,planned_pct,actual_pct,weight_pct) VALUES(?,?,?,?,?)",(pid,period,planned or 0,actual or 0,weight or 0))
+            if s: audit("CREATE","progress","progress",lid,period); st.rerun()
+            else: st.error(e)
     df=q("SELECT * FROM progress WHERE project_id=? ORDER BY id",(pid,)) if pid else pd.DataFrame()
     if not df.empty:
         st.dataframe(df,use_container_width=True,hide_index=True)
@@ -246,23 +258,22 @@ elif module=="progress":
         
         if perm("progress","edit") or perm("progress","delete"):
             with st.expander("Edit / Hapus Progress"):
-                psel = st.selectbox("Pilih Progress", df.id.tolist())
+                psel = st.selectbox("Pilih Progress", df.id.tolist(), key="sel_prog")
                 sel = df.loc[df.id==psel].iloc[0]
                 if sel.approval_status == 'Approved':
                     st.warning("Data sudah diapprove, tidak dapat diubah.")
                 else:
                     if perm("progress","edit"):
-                        with st.form("edit_prog"):
-                            e_per = st.text_input("Periode", sel.period)
-                            e_plan = st.number_input("Planned %", 0., 100., float(sel.planned_pct))
-                            e_act = st.number_input("Actual %", 0., 100., float(sel.actual_pct))
-                            e_w = st.number_input("Bobot %", 0., 100., float(sel.weight_pct))
-                            if st.form_submit_button("Update"):
-                                s, _, e = execute("UPDATE progress SET period=?, planned_pct=?, actual_pct=?, weight_pct=? WHERE id=?", (e_per, e_plan, e_act, e_w, psel))
-                                if s: audit("UPDATE","progress","progress",psel,e_per); st.rerun()
-                                else: st.error(e)
+                        e_per = st.text_input("Periode", sel.period, key="epro_per")
+                        e_plan = st.number_input("Planned %", 0., 100., float(sel.planned_pct), key="epro_plan")
+                        e_act = st.number_input("Actual %", 0., 100., float(sel.actual_pct), key="epro_act")
+                        e_w = st.number_input("Bobot %", 0., 100., float(sel.weight_pct), key="epro_w")
+                        if st.button("Update Progress", key="btn_upd_prog"):
+                            s, _, e = execute("UPDATE progress SET period=?, planned_pct=?, actual_pct=?, weight_pct=? WHERE id=?", (e_per, e_plan, e_act, e_w, psel))
+                            if s: audit("UPDATE","progress","progress",psel,e_per); st.rerun()
+                            else: st.error(e)
                     if perm("progress","delete"):
-                        if st.button("Hapus Progress Terpilih"):
+                        if st.button("Hapus Progress Terpilih", key="btn_del_prog"):
                             s, _, e = execute("DELETE FROM progress WHERE id=?",(psel,))
                             if s: audit("DELETE","progress","progress",psel); st.rerun()
                             else: st.error(e)
@@ -271,48 +282,54 @@ elif module=="rab":
     require("rab")
     st.subheader("📋 RAB + Approval Workflow")
     if perm("rab","create"):
-        with st.form("rab"):
-            st.info(FORM_INSTRUCTION)
-            a,b,c=st.columns(3); code=a.text_input("Kode"); cat=b.text_input("Kategori"); desc=c.text_input("Uraian")
-            d,e,f=st.columns(3); qty=d.number_input("Qty",0.); unit=e.text_input("Satuan"); price=f.number_input("Harga Satuan (Rp)",0.,step=1000., help=CURRENCY_HELP)
-            if st.form_submit_button("Tambah RAB"):
-                s, lid, e = execute("INSERT INTO rab(project_id,code,category,description,qty,unit,unit_price,budget) VALUES(?,?,?,?,?,?,?,?)",(pid,code,cat,desc,qty,unit,price,qty*price))
-                if s: audit("CREATE","rab","rab",lid,code); st.rerun()
-                else: st.error(e)
+        st.info(FORM_INSTRUCTION)
+        a,b,c=st.columns(3)
+        code=a.text_input("Kode", placeholder="Misal: A.1")
+        cat=b.text_input("Kategori", placeholder="Misal: Material")
+        desc=c.text_input("Uraian", placeholder="Misal: Semen")
+        d,e,f=st.columns(3)
+        qty=d.number_input("Qty",0., value=None, placeholder="Jumlah")
+        unit=e.text_input("Satuan", placeholder="Misal: Sak / Kg")
+        price=f.number_input("Harga Satuan (Rp)",0.,step=1000., help=CURRENCY_HELP, value=None, placeholder="Contoh: 50000")
+        with f: render_live_format(price)
+        if st.button("Tambah RAB", type="primary", key="btn_create_rab"):
+            s, lid, e = execute("INSERT INTO rab(project_id,code,category,description,qty,unit,unit_price,budget) VALUES(?,?,?,?,?,?,?,?)",(pid,code,cat,desc,qty or 0,unit,price or 0,(qty or 0)*(price or 0)))
+            if s: audit("CREATE","rab","rab",lid,code); st.rerun()
+            else: st.error(e)
     df=q("SELECT * FROM rab WHERE project_id=? ORDER BY id",(pid,)) if pid else pd.DataFrame()
     if not df.empty:
         st.dataframe(df,use_container_width=True,hide_index=True)
         st.metric("Total RAB",money(df.budget.sum()))
         if role in ["Admin","Manager"]:
             with st.expander("✅ Approval RAB"):
-                rid=st.selectbox("Pilih RAB untuk approval",df[df.approval_status != 'Approved'].id.tolist() if not df[df.approval_status != 'Approved'].empty else [None])
-                if rid and st.button("Approve RAB"):
+                rid=st.selectbox("Pilih RAB untuk approval",df[df.approval_status != 'Approved'].id.tolist() if not df[df.approval_status != 'Approved'].empty else [None], key="sel_appr_rab")
+                if rid and st.button("Approve RAB", key="btn_appr_rab"):
                     s, _, e = execute("UPDATE rab SET approval_status='Approved',approved_by=?,approved_at=? WHERE id=?",(user["username"],now(),rid))
                     if s: audit("APPROVE","rab","rab",rid); st.rerun()
                     else: st.error(e)
         
         if perm("rab","edit") or perm("rab","delete"):
             with st.expander("Edit / Hapus RAB"):
-                psel = st.selectbox("Pilih RAB", df.id.tolist())
+                psel = st.selectbox("Pilih RAB", df.id.tolist(), key="sel_rab")
                 sel = df.loc[df.id==psel].iloc[0]
                 if sel.approval_status == 'Approved':
                     st.warning("Data sudah diapprove, tidak dapat diubah.")
                 else:
                     if perm("rab","edit"):
-                        with st.form("edit_rab"):
-                            st.info(FORM_INSTRUCTION)
-                            e_code = st.text_input("Kode", sel.code)
-                            e_cat = st.text_input("Kategori", sel.category)
-                            e_desc = st.text_input("Uraian", sel.description)
-                            e_qty = st.number_input("Qty", 0., value=float(sel.qty))
-                            e_unit = st.text_input("Satuan", sel.unit)
-                            e_price = st.number_input("Harga Satuan (Rp)", 0., value=float(sel.unit_price), help=CURRENCY_HELP)
-                            if st.form_submit_button("Update"):
-                                s, _, e = execute("UPDATE rab SET code=?, category=?, description=?, qty=?, unit=?, unit_price=?, budget=? WHERE id=?", (e_code, e_cat, e_desc, e_qty, e_unit, e_price, e_qty*e_price, psel))
-                                if s: audit("UPDATE","rab","rab",psel,e_code); st.rerun()
-                                else: st.error(e)
+                        st.info(FORM_INSTRUCTION)
+                        e_code = st.text_input("Kode", sel.code, key="er_c")
+                        e_cat = st.text_input("Kategori", sel.category, key="er_ca")
+                        e_desc = st.text_input("Uraian", sel.description, key="er_d")
+                        e_qty = st.number_input("Qty", 0., value=float(sel.qty), key="er_q")
+                        e_unit = st.text_input("Satuan", sel.unit, key="er_u")
+                        e_price = st.number_input("Harga Satuan (Rp)", 0., value=float(sel.unit_price), help=CURRENCY_HELP, key="er_p")
+                        render_live_format(e_price)
+                        if st.button("Update RAB", key="btn_upd_rab"):
+                            s, _, e = execute("UPDATE rab SET code=?, category=?, description=?, qty=?, unit=?, unit_price=?, budget=? WHERE id=?", (e_code, e_cat, e_desc, e_qty, e_unit, e_price, e_qty*e_price, psel))
+                            if s: audit("UPDATE","rab","rab",psel,e_code); st.rerun()
+                            else: st.error(e)
                     if perm("rab","delete"):
-                        if st.button("Hapus RAB Terpilih"):
+                        if st.button("Hapus RAB Terpilih", key="btn_del_rab"):
                             s, _, e = execute("DELETE FROM rab WHERE id=?",(psel,))
                             if s: audit("DELETE","rab","rab",psel); st.rerun()
                             else: st.error(e)
@@ -321,39 +338,43 @@ elif module=="actual":
     require("actual")
     st.subheader("💸 Actual Cost + Approval")
     if perm("actual","create"):
-        with st.form("actual"):
-            st.info(FORM_INSTRUCTION)
-            a,b,c=st.columns(3); dt=a.date_input("Tanggal",date.today()); cat=b.text_input("Kategori"); vendor=c.text_input("Vendor")
-            desc=a.text_input("Deskripsi"); amount=b.number_input("Amount (Rp)",0.,step=100000., help=CURRENCY_HELP)
-            if st.form_submit_button("Tambah Actual"):
-                s, lid, e = execute("INSERT INTO actual_costs(project_id,date,category,description,vendor,amount) VALUES(?,?,?,?,?,?)",(pid,str(dt),cat,desc,vendor,amount))
-                if s: audit("CREATE","actual","actual_costs",lid,str(amount)); st.rerun()
-                else: st.error(e)
+        st.info(FORM_INSTRUCTION)
+        a,b,c=st.columns(3)
+        dt=a.date_input("Tanggal",date.today())
+        cat=b.text_input("Kategori", placeholder="Misal: Operasional")
+        vendor=c.text_input("Vendor", placeholder="Nama Toko/Supplier")
+        desc=a.text_input("Deskripsi", placeholder="Keterangan pengeluaran")
+        amount=b.number_input("Amount (Rp)",0.,step=100000., help=CURRENCY_HELP, value=None, placeholder="Contoh: 150000")
+        with b: render_live_format(amount)
+        if st.button("Tambah Actual", type="primary", key="btn_create_act"):
+            s, lid, e = execute("INSERT INTO actual_costs(project_id,date,category,description,vendor,amount) VALUES(?,?,?,?,?,?)",(pid,str(dt),cat,desc,vendor,amount or 0))
+            if s: audit("CREATE","actual","actual_costs",lid,str(amount)); st.rerun()
+            else: st.error(e)
     df=q("SELECT * FROM actual_costs WHERE project_id=? ORDER BY id DESC",(pid,)) if pid else pd.DataFrame()
     if not df.empty:
         st.dataframe(df,use_container_width=True,hide_index=True)
         st.metric("Total Actual",money(df.amount.sum()))
         if perm("actual","edit") or perm("actual","delete"):
             with st.expander("Edit / Hapus Actual Cost"):
-                psel = st.selectbox("Pilih Actual Cost", df.id.tolist())
+                psel = st.selectbox("Pilih Actual Cost", df.id.tolist(), key="sel_act")
                 sel = df.loc[df.id==psel].iloc[0]
                 if sel.approval_status == 'Approved':
                     st.warning("Data sudah diapprove, tidak dapat diubah.")
                 else:
                     if perm("actual","edit"):
-                        with st.form("edit_actual"):
-                            st.info(FORM_INSTRUCTION)
-                            e_dt = st.date_input("Tanggal", datetime.strptime(sel.date, "%Y-%m-%d").date() if sel.date else date.today())
-                            e_cat = st.text_input("Kategori", sel.category)
-                            e_ven = st.text_input("Vendor", sel.vendor)
-                            e_desc = st.text_input("Deskripsi", sel.description)
-                            e_amt = st.number_input("Amount (Rp)", 0., value=float(sel.amount), help=CURRENCY_HELP)
-                            if st.form_submit_button("Update"):
-                                s, _, e = execute("UPDATE actual_costs SET date=?, category=?, vendor=?, description=?, amount=? WHERE id=?", (str(e_dt), e_cat, e_ven, e_desc, e_amt, psel))
-                                if s: audit("UPDATE","actual","actual_costs",psel,str(e_amt)); st.rerun()
-                                else: st.error(e)
+                        st.info(FORM_INSTRUCTION)
+                        e_dt = st.date_input("Tanggal", datetime.strptime(sel.date, "%Y-%m-%d").date() if sel.date else date.today(), key="ea_d")
+                        e_cat = st.text_input("Kategori", sel.category, key="ea_c")
+                        e_ven = st.text_input("Vendor", sel.vendor, key="ea_v")
+                        e_desc = st.text_input("Deskripsi", sel.description, key="ea_de")
+                        e_amt = st.number_input("Amount (Rp)", 0., value=float(sel.amount), help=CURRENCY_HELP, key="ea_a")
+                        render_live_format(e_amt)
+                        if st.button("Update Actual", key="btn_upd_act"):
+                            s, _, e = execute("UPDATE actual_costs SET date=?, category=?, vendor=?, description=?, amount=? WHERE id=?", (str(e_dt), e_cat, e_ven, e_desc, e_amt, psel))
+                            if s: audit("UPDATE","actual","actual_costs",psel,str(e_amt)); st.rerun()
+                            else: st.error(e)
                     if perm("actual","delete"):
-                        if st.button("Hapus Actual Terpilih"):
+                        if st.button("Hapus Actual Terpilih", key="btn_del_act"):
                             s, _, e = execute("DELETE FROM actual_costs WHERE id=?",(psel,))
                             if s: audit("DELETE","actual","actual_costs",psel); st.rerun()
                             else: st.error(e)
@@ -362,39 +383,46 @@ elif module=="po":
     require("po")
     st.subheader("🧾 PO / Procurement + Approval")
     if perm("po","create"):
-        with st.form("po"):
-            st.info(FORM_INSTRUCTION)
-            a,b,c=st.columns(3); no=a.text_input("PO No"); vendor=b.text_input("Vendor"); dt=c.date_input("Tanggal",date.today())
-            desc=a.text_input("Deskripsi"); value=b.number_input("Nilai PO (Rp)",0.,step=100000., help=CURRENCY_HELP); paid=c.number_input("Paid (Rp)",0.,step=100000., help=CURRENCY_HELP)
-            if st.form_submit_button("Tambah PO"):
-                s, lid, e = execute("INSERT INTO purchase_orders(project_id,po_no,vendor,date,description,po_value,paid_value) VALUES(?,?,?,?,?,?,?)",(pid,no,vendor,str(dt),desc,value,paid))
-                if s: audit("CREATE","po","purchase_orders",lid,no); st.rerun()
-                else: st.error(e)
+        st.info(FORM_INSTRUCTION)
+        a,b,c=st.columns(3)
+        no=a.text_input("PO No", placeholder="Nomor PO")
+        vendor=b.text_input("Vendor", placeholder="Nama Vendor")
+        dt=c.date_input("Tanggal",date.today())
+        desc=a.text_input("Deskripsi", placeholder="Keterangan")
+        value=b.number_input("Nilai PO (Rp)",0.,step=100000., help=CURRENCY_HELP, value=None, placeholder="Total PO")
+        with b: render_live_format(value)
+        paid=c.number_input("Paid (Rp)",0.,step=100000., help=CURRENCY_HELP, value=None, placeholder="Sudah Dibayar")
+        with c: render_live_format(paid)
+        if st.button("Tambah PO", type="primary", key="btn_create_po"):
+            s, lid, e = execute("INSERT INTO purchase_orders(project_id,po_no,vendor,date,description,po_value,paid_value) VALUES(?,?,?,?,?,?,?)",(pid,no,vendor,str(dt),desc,value or 0,paid or 0))
+            if s: audit("CREATE","po","purchase_orders",lid,no); st.rerun()
+            else: st.error(e)
     df=q("SELECT * FROM purchase_orders WHERE project_id=?",(pid,)) if pid else pd.DataFrame()
     if not df.empty:
         df["outstanding"]=df.po_value-df.paid_value; st.dataframe(df,use_container_width=True,hide_index=True)
         if perm("po","edit") or perm("po","delete"):
             with st.expander("Edit / Hapus PO"):
-                psel = st.selectbox("Pilih PO", df.id.tolist())
+                psel = st.selectbox("Pilih PO", df.id.tolist(), key="sel_po")
                 sel = df.loc[df.id==psel].iloc[0]
                 if sel.approval_status == 'Approved':
                     st.warning("Data sudah diapprove, tidak dapat diubah.")
                 else:
                     if perm("po","edit"):
-                        with st.form("edit_po"):
-                            st.info(FORM_INSTRUCTION)
-                            e_no = st.text_input("PO No", sel.po_no)
-                            e_ven = st.text_input("Vendor", sel.vendor)
-                            e_dt = st.date_input("Tanggal", datetime.strptime(sel.date, "%Y-%m-%d").date() if sel.date else date.today())
-                            e_desc = st.text_input("Deskripsi", sel.description)
-                            e_val = st.number_input("Nilai PO (Rp)", 0., value=float(sel.po_value), help=CURRENCY_HELP)
-                            e_paid = st.number_input("Paid (Rp)", 0., value=float(sel.paid_value), help=CURRENCY_HELP)
-                            if st.form_submit_button("Update"):
-                                s, _, e = execute("UPDATE purchase_orders SET po_no=?, vendor=?, date=?, description=?, po_value=?, paid_value=? WHERE id=?", (e_no, e_ven, str(e_dt), e_desc, e_val, e_paid, psel))
-                                if s: audit("UPDATE","po","purchase_orders",psel,e_no); st.rerun()
-                                else: st.error(e)
+                        st.info(FORM_INSTRUCTION)
+                        e_no = st.text_input("PO No", sel.po_no, key="epo_no")
+                        e_ven = st.text_input("Vendor", sel.vendor, key="epo_ven")
+                        e_dt = st.date_input("Tanggal", datetime.strptime(sel.date, "%Y-%m-%d").date() if sel.date else date.today(), key="epo_dt")
+                        e_desc = st.text_input("Deskripsi", sel.description, key="epo_d")
+                        e_val = st.number_input("Nilai PO (Rp)", 0., value=float(sel.po_value), help=CURRENCY_HELP, key="epo_v")
+                        render_live_format(e_val)
+                        e_paid = st.number_input("Paid (Rp)", 0., value=float(sel.paid_value), help=CURRENCY_HELP, key="epo_p")
+                        render_live_format(e_paid)
+                        if st.button("Update PO", key="btn_upd_po"):
+                            s, _, e = execute("UPDATE purchase_orders SET po_no=?, vendor=?, date=?, description=?, po_value=?, paid_value=? WHERE id=?", (e_no, e_ven, str(e_dt), e_desc, e_val, e_paid, psel))
+                            if s: audit("UPDATE","po","purchase_orders",psel,e_no); st.rerun()
+                            else: st.error(e)
                     if perm("po","delete"):
-                        if st.button("Hapus PO Terpilih"):
+                        if st.button("Hapus PO Terpilih", key="btn_del_po"):
                             s, _, e = execute("DELETE FROM purchase_orders WHERE id=?",(psel,))
                             if s: audit("DELETE","po","purchase_orders",psel); st.rerun()
                             else: st.error(e)
@@ -403,39 +431,46 @@ elif module=="invoice":
     require("invoice")
     st.subheader("🧮 Invoice & Termin + Approval")
     if perm("invoice","create"):
-        with st.form("inv"):
-            st.info(FORM_INSTRUCTION)
-            a,b,c=st.columns(3); no=a.text_input("Invoice/Termin"); cust=b.text_input("Customer"); inv=a.date_input("Invoice Date",date.today()); due=c.date_input("Due Date",date.today())
-            amount=b.number_input("Amount (Rp)",0.,step=100000., help=CURRENCY_HELP); paid=c.number_input("Paid (Rp)",0.,step=100000., help=CURRENCY_HELP)
-            if st.form_submit_button("Tambah Invoice"):
-                s, lid, e = execute("INSERT INTO invoices(project_id,invoice_no,customer,invoice_date,due_date,amount,paid_amount) VALUES(?,?,?,?,?,?,?)",(pid,no,cust,str(inv),str(due),amount,paid))
-                if s: audit("CREATE","invoice","invoices",lid,no); st.rerun()
-                else: st.error(e)
+        st.info(FORM_INSTRUCTION)
+        a,b,c=st.columns(3)
+        no=a.text_input("Invoice/Termin", placeholder="Nomor Invoice")
+        cust=b.text_input("Customer", placeholder="Klien")
+        inv=a.date_input("Invoice Date",date.today())
+        due=c.date_input("Due Date",date.today())
+        amount=b.number_input("Amount (Rp)",0.,step=100000., help=CURRENCY_HELP, value=None, placeholder="Nilai Invoice")
+        with b: render_live_format(amount)
+        paid=c.number_input("Paid (Rp)",0.,step=100000., help=CURRENCY_HELP, value=None, placeholder="Telah Dibayar")
+        with c: render_live_format(paid)
+        if st.button("Tambah Invoice", type="primary", key="btn_create_inv"):
+            s, lid, e = execute("INSERT INTO invoices(project_id,invoice_no,customer,invoice_date,due_date,amount,paid_amount) VALUES(?,?,?,?,?,?,?)",(pid,no,cust,str(inv),str(due),amount or 0,paid or 0))
+            if s: audit("CREATE","invoice","invoices",lid,no); st.rerun()
+            else: st.error(e)
     df=q("SELECT * FROM invoices WHERE project_id=?",(pid,)) if pid else pd.DataFrame()
     if not df.empty:
         df["outstanding"]=df.amount-df.paid_amount; st.dataframe(df,use_container_width=True,hide_index=True)
         if perm("invoice","edit") or perm("invoice","delete"):
             with st.expander("Edit / Hapus Invoice"):
-                psel = st.selectbox("Pilih Invoice", df.id.tolist())
+                psel = st.selectbox("Pilih Invoice", df.id.tolist(), key="sel_inv")
                 sel = df.loc[df.id==psel].iloc[0]
                 if sel.approval_status == 'Approved':
                     st.warning("Data sudah diapprove, tidak dapat diubah.")
                 else:
                     if perm("invoice","edit"):
-                        with st.form("edit_inv"):
-                            st.info(FORM_INSTRUCTION)
-                            e_no = st.text_input("Invoice/Termin", sel.invoice_no)
-                            e_cust = st.text_input("Customer", sel.customer)
-                            e_inv = st.date_input("Invoice Date", datetime.strptime(sel.invoice_date, "%Y-%m-%d").date() if sel.invoice_date else date.today())
-                            e_due = st.date_input("Due Date", datetime.strptime(sel.due_date, "%Y-%m-%d").date() if sel.due_date else date.today())
-                            e_amt = st.number_input("Amount (Rp)", 0., value=float(sel.amount), help=CURRENCY_HELP)
-                            e_paid = st.number_input("Paid (Rp)", 0., value=float(sel.paid_amount), help=CURRENCY_HELP)
-                            if st.form_submit_button("Update"):
-                                s, _, e = execute("UPDATE invoices SET invoice_no=?, customer=?, invoice_date=?, due_date=?, amount=?, paid_amount=? WHERE id=?", (e_no, e_cust, str(e_inv), str(e_due), e_amt, e_paid, psel))
-                                if s: audit("UPDATE","invoice","invoices",psel,e_no); st.rerun()
-                                else: st.error(e)
+                        st.info(FORM_INSTRUCTION)
+                        e_no = st.text_input("Invoice/Termin", sel.invoice_no, key="einv_no")
+                        e_cust = st.text_input("Customer", sel.customer, key="einv_c")
+                        e_inv = st.date_input("Invoice Date", datetime.strptime(sel.invoice_date, "%Y-%m-%d").date() if sel.invoice_date else date.today(), key="einv_d1")
+                        e_due = st.date_input("Due Date", datetime.strptime(sel.due_date, "%Y-%m-%d").date() if sel.due_date else date.today(), key="einv_d2")
+                        e_amt = st.number_input("Amount (Rp)", 0., value=float(sel.amount), help=CURRENCY_HELP, key="einv_a")
+                        render_live_format(e_amt)
+                        e_paid = st.number_input("Paid (Rp)", 0., value=float(sel.paid_amount), help=CURRENCY_HELP, key="einv_p")
+                        render_live_format(e_paid)
+                        if st.button("Update Invoice", key="btn_upd_inv"):
+                            s, _, e = execute("UPDATE invoices SET invoice_no=?, customer=?, invoice_date=?, due_date=?, amount=?, paid_amount=? WHERE id=?", (e_no, e_cust, str(e_inv), str(e_due), e_amt, e_paid, psel))
+                            if s: audit("UPDATE","invoice","invoices",psel,e_no); st.rerun()
+                            else: st.error(e)
                     if perm("invoice","delete"):
-                        if st.button("Hapus Invoice Terpilih"):
+                        if st.button("Hapus Invoice Terpilih", key="btn_del_inv"):
                             s, _, e = execute("DELETE FROM invoices WHERE id=?",(psel,))
                             if s: audit("DELETE","invoice","invoices",psel); st.rerun()
                             else: st.error(e)
@@ -452,39 +487,46 @@ elif module=="payable":
     require("payable")
     st.subheader("🏦 Hutang Vendor")
     if perm("payable","create"):
-        with st.form("pay"):
-            st.info(FORM_INSTRUCTION)
-            a,b,c=st.columns(3); vendor=a.text_input("Vendor"); bill=b.text_input("No Tagihan"); bd=c.date_input("Bill Date",date.today()); due=a.date_input("Due Date",date.today())
-            amount=b.number_input("Amount (Rp)",0.,step=100000., help=CURRENCY_HELP); paid=c.number_input("Paid (Rp)",0.,step=100000., help=CURRENCY_HELP)
-            if st.form_submit_button("Tambah Hutang"):
-                s, lid, e = execute("INSERT INTO vendor_payables(project_id,vendor,bill_no,bill_date,due_date,amount,paid_amount) VALUES(?,?,?,?,?,?,?)",(pid,vendor,bill,str(bd),str(due),amount,paid))
-                if s: audit("CREATE","payable","vendor_payables",lid,bill); st.rerun()
-                else: st.error(e)
+        st.info(FORM_INSTRUCTION)
+        a,b,c=st.columns(3)
+        vendor=a.text_input("Vendor", placeholder="Nama Vendor")
+        bill=b.text_input("No Tagihan", placeholder="Nomor Tagihan/Kwitansi")
+        bd=c.date_input("Bill Date",date.today())
+        due=a.date_input("Due Date",date.today())
+        amount=b.number_input("Amount (Rp)",0.,step=100000., help=CURRENCY_HELP, value=None, placeholder="Total Hutang")
+        with b: render_live_format(amount)
+        paid=c.number_input("Paid (Rp)",0.,step=100000., help=CURRENCY_HELP, value=None, placeholder="Telah Dibayar")
+        with c: render_live_format(paid)
+        if st.button("Tambah Hutang", type="primary", key="btn_create_pay"):
+            s, lid, e = execute("INSERT INTO vendor_payables(project_id,vendor,bill_no,bill_date,due_date,amount,paid_amount) VALUES(?,?,?,?,?,?,?)",(pid,vendor,bill,str(bd),str(due),amount or 0,paid or 0))
+            if s: audit("CREATE","payable","vendor_payables",lid,bill); st.rerun()
+            else: st.error(e)
     df=q("SELECT * FROM vendor_payables WHERE project_id=?",(pid,)) if pid else pd.DataFrame()
     if not df.empty:
         df["outstanding"]=df.amount-df.paid_amount; st.dataframe(df,use_container_width=True,hide_index=True); st.metric("Hutang Outstanding",money(df.outstanding.sum()))
         if perm("payable","edit") or perm("payable","delete"):
             with st.expander("Edit / Hapus Hutang"):
-                psel = st.selectbox("Pilih Hutang", df.id.tolist())
+                psel = st.selectbox("Pilih Hutang", df.id.tolist(), key="sel_pay")
                 sel = df.loc[df.id==psel].iloc[0]
                 if sel.approval_status == 'Approved':
                     st.warning("Data sudah diapprove, tidak dapat diubah.")
                 else:
                     if perm("payable","edit"):
-                        with st.form("edit_pay"):
-                            st.info(FORM_INSTRUCTION)
-                            e_ven = st.text_input("Vendor", sel.vendor)
-                            e_bill = st.text_input("No Tagihan", sel.bill_no)
-                            e_bd = st.date_input("Bill Date", datetime.strptime(sel.bill_date, "%Y-%m-%d").date() if sel.bill_date else date.today())
-                            e_due = st.date_input("Due Date", datetime.strptime(sel.due_date, "%Y-%m-%d").date() if sel.due_date else date.today())
-                            e_amt = st.number_input("Amount (Rp)", 0., value=float(sel.amount), help=CURRENCY_HELP)
-                            e_paid = st.number_input("Paid (Rp)", 0., value=float(sel.paid_amount), help=CURRENCY_HELP)
-                            if st.form_submit_button("Update"):
-                                s, _, e = execute("UPDATE vendor_payables SET vendor=?, bill_no=?, bill_date=?, due_date=?, amount=?, paid_amount=? WHERE id=?", (e_ven, e_bill, str(e_bd), str(e_due), e_amt, e_paid, psel))
-                                if s: audit("UPDATE","payable","vendor_payables",psel,e_bill); st.rerun()
-                                else: st.error(e)
+                        st.info(FORM_INSTRUCTION)
+                        e_ven = st.text_input("Vendor", sel.vendor, key="epay_v")
+                        e_bill = st.text_input("No Tagihan", sel.bill_no, key="epay_b")
+                        e_bd = st.date_input("Bill Date", datetime.strptime(sel.bill_date, "%Y-%m-%d").date() if sel.bill_date else date.today(), key="epay_d1")
+                        e_due = st.date_input("Due Date", datetime.strptime(sel.due_date, "%Y-%m-%d").date() if sel.due_date else date.today(), key="epay_d2")
+                        e_amt = st.number_input("Amount (Rp)", 0., value=float(sel.amount), help=CURRENCY_HELP, key="epay_a")
+                        render_live_format(e_amt)
+                        e_paid = st.number_input("Paid (Rp)", 0., value=float(sel.paid_amount), help=CURRENCY_HELP, key="epay_p")
+                        render_live_format(e_paid)
+                        if st.button("Update Hutang", key="btn_upd_pay"):
+                            s, _, e = execute("UPDATE vendor_payables SET vendor=?, bill_no=?, bill_date=?, due_date=?, amount=?, paid_amount=? WHERE id=?", (e_ven, e_bill, str(e_bd), str(e_due), e_amt, e_paid, psel))
+                            if s: audit("UPDATE","payable","vendor_payables",psel,e_bill); st.rerun()
+                            else: st.error(e)
                     if perm("payable","delete"):
-                        if st.button("Hapus Hutang Terpilih"):
+                        if st.button("Hapus Hutang Terpilih", key="btn_del_pay"):
                             s, _, e = execute("DELETE FROM vendor_payables WHERE id=?",(psel,))
                             if s: audit("DELETE","payable","vendor_payables",psel); st.rerun()
                             else: st.error(e)
@@ -493,36 +535,41 @@ elif module=="cashflow":
     require("cashflow")
     st.subheader("💵 Cash Flow")
     if perm("cashflow","create"):
-        with st.form("cf"):
-            st.info(FORM_INSTRUCTION)
-            a,b,c=st.columns(3); period=a.text_input("Periode"); cin=b.number_input("Cash In (Rp)",0.,step=100000., help=CURRENCY_HELP); cout=c.number_input("Cash Out (Rp)",0.,step=100000., help=CURRENCY_HELP)
-            if st.form_submit_button("Tambah"):
-                s, lid, e = execute("INSERT INTO cashflow(project_id,period,cash_in,cash_out) VALUES(?,?,?,?)",(pid,period,cin,cout))
-                if s: audit("CREATE","cashflow","cashflow",lid,period); st.rerun()
-                else: st.error(e)
+        st.info(FORM_INSTRUCTION)
+        a,b,c=st.columns(3)
+        period=a.text_input("Periode", placeholder="Bulan / Minggu")
+        cin=b.number_input("Cash In (Rp)",0.,step=100000., help=CURRENCY_HELP, value=None, placeholder="Pemasukan")
+        with b: render_live_format(cin)
+        cout=c.number_input("Cash Out (Rp)",0.,step=100000., help=CURRENCY_HELP, value=None, placeholder="Pengeluaran")
+        with c: render_live_format(cout)
+        if st.button("Tambah", type="primary", key="btn_create_cf"):
+            s, lid, e = execute("INSERT INTO cashflow(project_id,period,cash_in,cash_out) VALUES(?,?,?,?)",(pid,period,cin or 0,cout or 0))
+            if s: audit("CREATE","cashflow","cashflow",lid,period); st.rerun()
+            else: st.error(e)
     df=q("SELECT * FROM cashflow WHERE project_id=?",(pid,)) if pid else pd.DataFrame()
     if not df.empty:
         df["net"]=df.cash_in-df.cash_out; df["cumulative"]=df.net.cumsum(); st.dataframe(df,use_container_width=True,hide_index=True)
         st.plotly_chart(px.line(df,x="period",y="cumulative",markers=True,title="Cumulative Cash Flow"),use_container_width=True)
         if perm("cashflow","edit") or perm("cashflow","delete"):
             with st.expander("Edit / Hapus Cash Flow"):
-                psel = st.selectbox("Pilih Cash Flow", df.id.tolist())
+                psel = st.selectbox("Pilih Cash Flow", df.id.tolist(), key="sel_cf")
                 sel = df.loc[df.id==psel].iloc[0]
                 if sel.approval_status == 'Approved':
                     st.warning("Data sudah diapprove, tidak dapat diubah.")
                 else:
                     if perm("cashflow","edit"):
-                        with st.form("edit_cf"):
-                            st.info(FORM_INSTRUCTION)
-                            e_per = st.text_input("Periode", sel.period)
-                            e_cin = st.number_input("Cash In (Rp)", 0., value=float(sel.cash_in), help=CURRENCY_HELP)
-                            e_cout = st.number_input("Cash Out (Rp)", 0., value=float(sel.cash_out), help=CURRENCY_HELP)
-                            if st.form_submit_button("Update"):
-                                s, _, e = execute("UPDATE cashflow SET period=?, cash_in=?, cash_out=? WHERE id=?", (e_per, e_cin, e_cout, psel))
-                                if s: audit("UPDATE","cashflow","cashflow",psel,e_per); st.rerun()
-                                else: st.error(e)
+                        st.info(FORM_INSTRUCTION)
+                        e_per = st.text_input("Periode", sel.period, key="ecf_per")
+                        e_cin = st.number_input("Cash In (Rp)", 0., value=float(sel.cash_in), help=CURRENCY_HELP, key="ecf_in")
+                        render_live_format(e_cin)
+                        e_cout = st.number_input("Cash Out (Rp)", 0., value=float(sel.cash_out), help=CURRENCY_HELP, key="ecf_out")
+                        render_live_format(e_cout)
+                        if st.button("Update Cash Flow", key="btn_upd_cf"):
+                            s, _, e = execute("UPDATE cashflow SET period=?, cash_in=?, cash_out=? WHERE id=?", (e_per, e_cin, e_cout, psel))
+                            if s: audit("UPDATE","cashflow","cashflow",psel,e_per); st.rerun()
+                            else: st.error(e)
                     if perm("cashflow","delete"):
-                        if st.button("Hapus Cash Flow Terpilih"):
+                        if st.button("Hapus Cash Flow Terpilih", key="btn_del_cf"):
                             s, _, e = execute("DELETE FROM cashflow WHERE id=?",(psel,))
                             if s: audit("DELETE","cashflow","cashflow",psel); st.rerun()
                             else: st.error(e)
@@ -579,27 +626,31 @@ elif module=="users":
     users=q("SELECT id,username,role,active,must_change_password,created_at FROM users")
     st.dataframe(users,use_container_width=True,hide_index=True)
     if perm("users","create"):
-        with st.form("newuser"):
-            a,b,c=st.columns(3); un=a.text_input("Username"); pw=b.text_input("Password",type="password"); rr=c.selectbox("Role",["Admin","Manager","Finance","Viewer"])
-            if st.form_submit_button("Tambah User"):
+        a,b,c=st.columns(3)
+        un=a.text_input("Username", placeholder="Masukkan username")
+        pw=b.text_input("Password",type="password", placeholder="Minimal 8 karakter")
+        rr=c.selectbox("Role",["Admin","Manager","Finance","Viewer"])
+        if st.button("Tambah User", type="primary", key="btn_create_usr"):
+            if not un.strip() or len(pw) < 8:
+                st.error("Username wajib diisi dan password minimal 8 karakter.")
+            else:
                 s, lid, e = execute("INSERT INTO users(username,password_hash,role,created_at) VALUES(?,?,?,?)",(un,hp(pw),rr,now()))
                 if s: audit("CREATE","users","users",lid,un); st.rerun()
                 else: st.error(e)
     if not users.empty and (perm("users","edit") or perm("users","delete")):
         with st.expander("Edit / Hapus User"):
-            psel = st.selectbox("Pilih User", users.id.tolist(), format_func=lambda x: users.loc[users.id==x, "username"].iloc[0])
+            psel = st.selectbox("Pilih User", users.id.tolist(), format_func=lambda x: users.loc[users.id==x, "username"].iloc[0], key="sel_usr")
             sel = users.loc[users.id==psel].iloc[0]
             if perm("users","edit"):
-                with st.form("edit_user"):
-                    e_un = st.text_input("Username", sel.username)
-                    e_rr = st.selectbox("Role", ["Admin","Manager","Finance","Viewer"], index=["Admin","Manager","Finance","Viewer"].index(sel.role))
-                    e_act = st.checkbox("Active", value=bool(sel.active))
-                    if st.form_submit_button("Update"):
-                        s, _, e = execute("UPDATE users SET username=?, role=?, active=? WHERE id=?", (e_un, e_rr, int(e_act), psel))
-                        if s: audit("UPDATE","users","users",psel,e_un); st.rerun()
-                        else: st.error(e)
+                e_un = st.text_input("Username", sel.username, key="eu_un")
+                e_rr = st.selectbox("Role", ["Admin","Manager","Finance","Viewer"], index=["Admin","Manager","Finance","Viewer"].index(sel.role), key="eu_rr")
+                e_act = st.checkbox("Active", value=bool(sel.active), key="eu_act")
+                if st.button("Update User", key="btn_upd_usr"):
+                    s, _, e = execute("UPDATE users SET username=?, role=?, active=? WHERE id=?", (e_un, e_rr, int(e_act), psel))
+                    if s: audit("UPDATE","users","users",psel,e_un); st.rerun()
+                    else: st.error(e)
             if perm("users","delete"):
-                if st.button("Hapus User Terpilih"):
+                if st.button("Hapus User Terpilih", key="btn_del_usr"):
                     if sel.username == "admin":
                         st.error("Tidak dapat menghapus user admin default.")
                     else:
