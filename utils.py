@@ -26,14 +26,41 @@ CURRENCY_HELP = "Ketik angka tanpa titik/koma."
 
 def money(x): return f"Rp {x:,.0f}".replace(",", ".") if x is not None else "Rp 0"
 
+def money_short(x):
+    if x is None: return "Rp 0"
+    abs_x = abs(x)
+    if abs_x >= 1e12:
+        val = f"{x/1e12:.2f}".replace(".", ",")
+        return f"Rp {val} T"
+    elif abs_x >= 1e9:
+        val = f"{x/1e9:.2f}".replace(".", ",")
+        return f"Rp {val} M"
+    elif abs_x >= 1e6:
+        val = f"{x/1e6:.2f}".replace(".", ",")
+        return f"Rp {val} Jt"
+    else:
+        return money(x)
+
 def render_live_format(val):
     if val is not None and val > 0:
         st.markdown(f"<span style='color: #4CAF50; font-weight: bold;'>Terbaca: {money(val)}</span>", unsafe_allow_html=True)
 
-def conn():
+from sqlalchemy import create_engine
+import warnings
+warnings.filterwarnings('ignore', category=UserWarning, module='pandas')
+
+@st.cache_resource
+def get_engine():
     if DATABASE_URL:
-        c = psycopg2.connect(DATABASE_URL)
-        return c
+        # Gunakan connection pooling bawaan SQLAlchemy
+        # Supabase Pooler menggunakan mode transaction, pool_size=5 cukup untuk Streamlit lokal
+        return create_engine(DATABASE_URL, pool_size=10, max_overflow=20)
+    return None
+
+def conn():
+    engine = get_engine()
+    if engine:
+        return engine.raw_connection()
     else:
         # Fallback to local SQLite if no DB URL is provided
         c = sqlite3.connect(DB, timeout=10.0)
@@ -57,10 +84,25 @@ def trans(sql):
         return sql.replace("?", "%s")
     return sql
 
+@st.cache_data(ttl=60)
 def q(sql, params=()):
     sql = trans(sql)
-    with conn() as c:
-        return pd.read_sql_query(sql, c, params=params)
+    engine = get_engine()
+    if engine:
+        # Gunakan SQLAlchemy engine langsung di pandas untuk menghindari warning dan memanfaatkan pooling
+        return pd.read_sql_query(sql, engine, params=params)
+    else:
+        with conn() as c:
+            return pd.read_sql_query(sql, c, params=params)
+
+from concurrent.futures import ThreadPoolExecutor
+
+@st.cache_data(ttl=60)
+def q_multi(queries):
+    """Run multiple queries in parallel to reduce network latency"""
+    with ThreadPoolExecutor(max_workers=min(10, len(queries))) as executor:
+        futures = [executor.submit(q.__wrapped__, sql, params) for sql, params in queries]
+        return [f.result() for f in futures]
 
 def execute(sql, params=()):
     sql = trans(sql)
@@ -71,9 +113,11 @@ def execute(sql, params=()):
             if DATABASE_URL:
                 # PostgreSQL needs explicit commit and FETCH for id if RETURNING is used
                 c.commit()
-                # If we need lastrowid, we would use RETURNING id. We assume it's not strictly needed here for standard queries
+                st.cache_data.clear() # Bersihkan cache otomatis jika ada perubahan data
                 return True, None, None
             else:
+                c.commit()
+                st.cache_data.clear() # Bersihkan cache otomatis jika ada perubahan data
                 return True, cursor.lastrowid, None
     except Exception as e:
         return False, None, str(e)
@@ -105,8 +149,8 @@ def init_db():
         if not DATABASE_URL:
             c.execute('PRAGMA journal_mode=WAL;')
         cursor = c.cursor()
-        for q in queries:
-            cursor.execute(q)
+        for query in queries:
+            cursor.execute(query)
         if DATABASE_URL: c.commit()
     
     # Init default user and permissions

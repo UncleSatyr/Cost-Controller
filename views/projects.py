@@ -4,7 +4,7 @@ from datetime import date
 from utils import q, execute, audit, now, require, perm, money, render_live_format, FORM_INSTRUCTION, CURRENCY_HELP
 
 require("projects")
-st.subheader("🏗️ Database Proyek")
+st.subheader("🏗️ Manajemen Proyek")
 
 projects = q("SELECT * FROM projects ORDER BY id DESC")
 
@@ -30,6 +30,7 @@ if perm("projects","create") or perm("projects","edit") or perm("projects","dele
                             (name, customer, contract or 0, str(start), str(end), pic, status, now(), now()))
                     if s: 
                         audit("CREATE", "projects", "projects", lid, name)
+                        st.success("Proyek berhasil ditambahkan!")
                         st.rerun()
                     else: st.error(e)
         else: st.info("Anda tidak memiliki hak akses untuk menambah proyek.")
@@ -42,24 +43,58 @@ if perm("projects","create") or perm("projects","edit") or perm("projects","dele
             p = projects.loc[projects.id==psel].iloc[0]
             if perm("projects","edit"):
                 st.info(FORM_INSTRUCTION)
-                nm = st.text_input("Nama", p.name, key="ep_nm")
-                cv = st.number_input("Nilai Kontrak (Rp)", value=float(p.contract_value), help=CURRENCY_HELP, key="ep_cv")
-                render_live_format(cv)
-                stt = st.selectbox("Status", ["Active","Completed","On Hold","Cancelled"], index=["Active","Completed","On Hold","Cancelled"].index(p.status), key="ep_stt")
-                if st.button("Update Proyek", key="btn_upd_proj"):
-                    s, _, e = execute("UPDATE projects SET name=?,contract_value=?,status=?,updated_at=? WHERE id=?", (nm, cv, stt, now(), psel))
-                    if s: 
-                        audit("UPDATE", "projects", "projects", psel, nm)
-                        st.rerun()
-                    else: st.error(e)
+                a,b = st.columns(2)
+                nm = a.text_input("Nama Proyek *", p.name, key="ep_nm")
+                cust = b.text_input("Customer", p.customer if pd.notna(p.customer) else "", key="ep_cust")
+                
+                cv = a.number_input("Nilai Kontrak (Rp)", value=float(p.contract_value), help=CURRENCY_HELP, key="ep_cv")
+                with a: render_live_format(cv)
+                p_pic = b.text_input("PIC", p.pic if pd.notna(p.pic) else "", key="ep_pic")
+                
+                try: s_date = pd.to_datetime(p.start_date).date() if pd.notna(p.start_date) else date.today()
+                except: s_date = date.today()
+                st_date = a.date_input("Tanggal Mulai", s_date, key="ep_start")
+                
+                try: e_date = pd.to_datetime(p.end_date).date() if pd.notna(p.end_date) else date.today()
+                except: e_date = date.today()
+                en_date = b.date_input("Target Selesai", e_date, key="ep_end")
+                
+                stt = st.selectbox("Status", ["Active","Completed","On Hold","Cancelled"], index=["Active","Completed","On Hold","Cancelled"].index(p.status) if p.status in ["Active","Completed","On Hold","Cancelled"] else 0, key="ep_stt")
+                
+                c1, c2 = st.columns([1,4])
+                with c1:
+                    if st.button("Update Proyek", type="primary", key="btn_upd_proj"):
+                        if not nm.strip():
+                            st.error("Nama Proyek wajib diisi!")
+                        else:
+                            s, _, e = execute("UPDATE projects SET name=?, customer=?, contract_value=?, start_date=?, end_date=?, pic=?, status=?, updated_at=? WHERE id=?", 
+                                (nm, cust, cv, str(st_date), str(en_date), p_pic, stt, now(), psel))
+                            if s: 
+                                audit("UPDATE", "projects", "projects", psel, nm)
+                                st.success("Proyek berhasil diupdate!")
+                                st.rerun()
+                            else: st.error(e)
+            
             if perm("projects","delete"):
-                if st.button("🗑️ Hapus Proyek Terpilih", key="btn_del_proj"):
-                    s, _, e = execute("DELETE FROM projects WHERE id=?", (psel,))
-                    if s: 
-                        audit("DELETE", "projects", "projects", psel)
-                        st.rerun()
-                    else: st.error(e)
+                st.write("") # spacer
+                with st.expander("⚠️ Hapus Proyek (Berbahaya)"):
+                    st.warning("Menghapus proyek akan menghilangkan seluruh data yang terhubung ke proyek ini (RAB, Actual Cost, dll) jika database tidak dikonfigurasi dengan relasi pelindung.")
+                    if st.button("Hapus Proyek Secara Permanen", type="primary", key="btn_del_proj"):
+                        s, _, e = execute("DELETE FROM projects WHERE id=?", (psel,))
+                        if s: 
+                            audit("DELETE", "projects", "projects", psel)
+                            st.success("Proyek berhasil dihapus!")
+                            st.rerun()
+                        else: st.error(e)
 
 if not projects.empty:
-    st.markdown("---")
-    st.dataframe(projects, use_container_width=True, hide_index=True)
+    st.markdown("#### 📋 Daftar Proyek")
+    disp = projects.copy()
+    disp["contract_value"] = disp["contract_value"].apply(lambda x: money(x))
+    disp = disp.rename(columns={
+        "id": "ID", "name": "Nama Proyek", "customer": "Customer",
+        "contract_value": "Nilai Kontrak", "start_date": "Tgl Mulai",
+        "end_date": "Target Selesai", "pic": "PIC", "status": "Status",
+        "created_at": "Dibuat", "updated_at": "Diupdate"
+    })
+    st.dataframe(disp, hide_index=True)
