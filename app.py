@@ -9,6 +9,10 @@ hide_github_icon = """
 /* Sembunyikan header bawaan Streamlit (termasuk icon GitHub) seperti permintaan User */
 header {visibility: hidden !important;}
 
+/* Sembunyikan tombol "X" atau "<" untuk menutup sidebar agar user tidak terjebak */
+[data-testid="stSidebarCollapseButton"] {display: none !important;}
+section[data-testid="stSidebar"] button[kind="header"] {display: none !important;}
+
 /* Perkecil ukuran font angka di st.metric agar tidak terpotong */
 [data-testid="stMetricValue"] {
     font-size: 1.6rem !important;
