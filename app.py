@@ -2,20 +2,10 @@ import streamlit as st
 from streamlit_cookies_controller import CookieController
 from utils import perm, audit
 
-st.set_page_config(page_title="Project Cost Control System v3", page_icon="🏗️", layout="wide")
+st.set_page_config(page_title="Project Cost Control System v3", page_icon="🏗️", layout="wide", initial_sidebar_state="expanded")
 
 hide_github_icon = """
 <style>
-/* Sembunyikan bagian kanan header (toolbar, icon GitHub, dsb) */
-[data-testid="stToolbar"] {visibility: hidden !important;}
-[data-testid="stHeaderActionElements"] {display: none !important;}
-
-/* Pastikan tombol sidebar (unhide) tetap terlihat */
-[data-testid="collapsedControl"] {
-    display: flex !important;
-    visibility: visible !important;
-}
-
 /* Perkecil ukuran font angka di st.metric agar tidak terpotong */
 [data-testid="stMetricValue"] {
     font-size: 1.6rem !important;
