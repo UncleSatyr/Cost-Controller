@@ -1,10 +1,8 @@
 import streamlit as st
 from streamlit_cookies_controller import CookieController
-from utils import perm, audit, init_db
+from utils import perm, audit
 
 st.set_page_config(page_title="Project Cost Control System v3", page_icon="🏗️", layout="wide")
-
-init_db()
 
 controller = CookieController()
 st.session_state["cookie_controller"] = controller
@@ -14,15 +12,28 @@ st.session_state["cookie_controller"] = controller
 if "app_loaded" not in st.session_state:
     st.session_state.app_loaded = True
     st.markdown("<div style='text-align: center; margin-top: 20vh;'><h3>Memuat sistem...</h3></div>", unsafe_allow_html=True)
-    st.stop()
+    import time
+    time.sleep(0.5)
+    st.rerun()
 
 if "user" not in st.session_state:
     st.session_state.user = None
 
-cookie_user = controller.get("auth_username")
-# Handle auto-login routing
+cookie_user = None
+if st.session_state.user is None:
+    try:
+        cookie_user = controller.get("auth_username")
+    except TypeError:
+        cookie_user = None
+
 if st.session_state.user is None and cookie_user:
-    # Just render login page, it will handle auto-hydration and rerun
+    from utils import q
+    r = q("SELECT * FROM users WHERE username=%s AND active=1", (cookie_user,))
+    
+    if not r.empty:
+        st.session_state.user = {"id": int(r.iloc[0].id), "username": r.iloc[0].username, "role": r.iloc[0].role, "must_change": int(r.iloc[0].must_change_password)}
+        st.rerun()
+if st.session_state.user is None:
     pg = st.navigation([st.Page("views/login.py", title="Login", icon="🔐")])
     pg.run()
     st.stop()
@@ -36,6 +47,7 @@ if user is None or user.get("must_change"):
 else:
     # Build sidebar based on permissions
     role = user["role"]
+    st.logo("logo-01.webp")
     st.sidebar.success(f"👤 {user['username']} • {role}")
     
     from utils import q
@@ -48,6 +60,8 @@ else:
         controller.remove("auth_username")
         st.session_state.user = None
         st.rerun()
+        
+    st.sidebar.markdown("<div style='text-align: center; color: gray; font-size: 0.85em; margin-top: 10px; margin-bottom: 20px;'>✨ Upscaled & Enhanced by <br><b>UncleSatyr</b></div>", unsafe_allow_html=True)
         
     pages["Utama"] = []
     if perm("dashboard", "view"): pages["Utama"].append(st.Page("views/dashboard.py", title="Dashboard", icon="📊"))

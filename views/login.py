@@ -1,14 +1,18 @@
 import streamlit as st
-from utils import q, hash_pw, check_pw, audit, execute, init_db
-
-init_db()
+from utils import q, hash_pw, check_pw, audit, execute
+import time
 
 controller = st.session_state.get("cookie_controller")
 
 if "user" not in st.session_state:
     st.session_state.user = None
 
-cookie_user = controller.get("auth_username")
+cookie_user = None
+if controller is not None:
+    try:
+        cookie_user = controller.get("auth_username")
+    except TypeError:
+        pass
 
 if st.session_state.user is None and cookie_user:
     r = q("SELECT * FROM users WHERE username=? AND active=1", (cookie_user,))
@@ -16,7 +20,8 @@ if st.session_state.user is None and cookie_user:
         st.session_state.user = {"id": int(r.iloc[0].id), "username": r.iloc[0].username, "role": r.iloc[0].role, "must_change": int(r.iloc[0].must_change_password)}
         st.rerun()
 
-st.title("🔐 Project Cost Control System V3 Production")
+st.image("logo-01.webp", width=250)
+st.title("🔐 Project Cost Control System V3")
 
 if st.session_state.user is None:
     with st.form("login"):
@@ -26,7 +31,10 @@ if st.session_state.user is None:
             r = q("SELECT * FROM users WHERE username=? AND active=1", (u,))
             if not r.empty and check_pw(p, r.iloc[0].password_hash):
                 st.session_state.user = {"id": int(r.iloc[0].id), "username": r.iloc[0].username, "role": r.iloc[0].role, "must_change": int(r.iloc[0].must_change_password)}
-                controller.set("auth_username", r.iloc[0].username, max_age=86400*7)
+                try:
+                    controller.set("auth_username", r.iloc[0].username, max_age=86400*7)
+                except TypeError:
+                    pass
                 audit("LOGIN", "auth", detail="Successful login")
                 st.rerun()
             else: 

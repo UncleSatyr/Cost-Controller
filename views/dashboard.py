@@ -11,12 +11,16 @@ if project is None:
     st.info("Belum ada proyek.")
     st.stop()
 
-rab = q("SELECT * FROM rab WHERE project_id=?", (pid,))
-ac = q("SELECT * FROM actual_costs WHERE project_id=?", (pid,))
-pr = q("SELECT * FROM progress WHERE project_id=? ORDER BY id", (pid,))
-inv = q("SELECT * FROM invoices WHERE project_id=?", (pid,))
-pay = q("SELECT * FROM vendor_payables WHERE project_id=?", (pid,))
-cf = q("SELECT * FROM cashflow WHERE project_id=?", (pid,))
+from utils import q_multi
+dfs = q_multi([
+    ("SELECT * FROM rab WHERE project_id=%s", (pid,)),
+    ("SELECT * FROM actual_costs WHERE project_id=%s", (pid,)),
+    ("SELECT * FROM progress WHERE project_id=%s ORDER BY id", (pid,)),
+    ("SELECT * FROM invoices WHERE project_id=%s", (pid,)),
+    ("SELECT * FROM vendor_payables WHERE project_id=%s", (pid,)),
+    ("SELECT * FROM cashflow WHERE project_id=%s", (pid,))
+])
+rab, ac, pr, inv, pay, cf = dfs
 
 contract = float(project.contract_value)
 bac = float(rab.budget.sum()) if not rab.empty else 0
