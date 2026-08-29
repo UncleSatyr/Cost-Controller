@@ -4,6 +4,16 @@ from utils import perm, audit
 
 st.set_page_config(page_title="Project Cost Control System v3", page_icon="🏗️", layout="wide")
 
+hide_github_icon = """
+<style>
+/* Sembunyikan toolbar (termasuk icon GitHub) */
+[data-testid="stToolbar"] {visibility: hidden !important;}
+/* Sembunyikan header bawaan Streamlit secara penuh jika diperlukan */
+header {visibility: hidden !important;}
+</style>
+"""
+st.markdown(hide_github_icon, unsafe_allow_html=True)
+
 controller = CookieController()
 st.session_state["cookie_controller"] = controller
 
