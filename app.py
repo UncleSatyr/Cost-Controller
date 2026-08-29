@@ -6,10 +6,9 @@ st.set_page_config(page_title="Project Cost Control System v3", page_icon="ğŸ—ï
 
 hide_github_icon = """
 <style>
-/* Sembunyikan toolbar (termasuk icon GitHub) */
+/* Sembunyikan bagian kanan header (toolbar, icon GitHub, dsb) tapi biarkan tombol sidebar */
 [data-testid="stToolbar"] {visibility: hidden !important;}
-/* Sembunyikan header bawaan Streamlit secara penuh jika diperlukan */
-header {visibility: hidden !important;}
+[data-testid="stHeaderActionElements"] {display: none !important;}
 </style>
 """
 st.markdown(hide_github_icon, unsafe_allow_html=True)
