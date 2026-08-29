@@ -6,6 +6,9 @@ st.set_page_config(page_title="Project Cost Control System v3", page_icon="ğŸ—ï
 
 hide_github_icon = """
 <style>
+/* Sembunyikan header bawaan Streamlit (termasuk icon GitHub) seperti permintaan User */
+header {visibility: hidden !important;}
+
 /* Perkecil ukuran font angka di st.metric agar tidak terpotong */
 [data-testid="stMetricValue"] {
     font-size: 1.6rem !important;
